@@ -1,0 +1,76 @@
+services:
+  rabbitmq:
+    image: "rabbitmq:3.13-management"
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - ticket_network
+
+  backend:
+    build: ./backend
+    container_name: backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=ticket_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - FLASK_APP=app.py
+      - FLASK_DEBUG=1 
+    depends_on:
+      - rabbitmq
+      - db
+    networks:
+      - ticket_network
+
+  worker:
+    build: ./worker
+    volumes:
+      - ./worker:/app
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=ticket_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    depends_on:
+      - rabbitmq
+      - db
+    networks:
+      - ticket_network
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - ticket_network
+
+  db:
+    image: postgres:16
+    container_name: db
+    environment:
+      - POSTGRES_DB=ticket_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db_init:/docker-entrypoint-initdb.d
+    networks:
+      - ticket_network
+
+volumes:
+  postgres_data:
+
+networks:
+  ticket_network:
+    driver: bridge

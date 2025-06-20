@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Moje Zamówienia - System Biletowy</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body class="bg-light">
+    <div class="container my-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h2">Historia Twoich Zamówień</h1>
+            <div>
+                <a href="/tickets.html" class="btn btn-primary">Kup Nowe Bilety</a>
+                <button onclick="logout()" class="btn btn-outline-secondary">Wyloguj</button>
+            </div>
+        </div>
+
+        <div id="loading-status">
+            <p>Ładowanie zamówień...</p>
+        </div>
+
+        <div class="table-responsive">
+            <table id="orders-table" class="table table-striped table-hover align-middle" style="display:none;">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID Zam.</th>
+                        <th>Nazwa Koncertu</th>
+                        <th>Ilość</th>
+                        <th>Status</th>
+                        <th>Data Złożenia</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-table-body">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+    
+<script src="/js/app.js"></script>
+    <script>
+        const loadingDiv = document.getElementById('loading-status');
+        const table = document.getElementById('orders-table');
+        const tableBody = document.getElementById('orders-table-body');
+        const token = localStorage.getItem('accessToken');
+        let pollingIntervalId = null;
+
+        let pollCount = 0;
+
+        async function fetchAndRenderOrders() {
+            pollCount++;
+            console.log(`--- Pętla #${pollCount}: Uruchamiam fetchAndRenderOrders ---`);
+
+            if (!token) {
+                console.error("Brak tokenu, przekierowuję na /login.html");
+                if (pollingIntervalId) clearInterval(pollingIntervalId);
+                window.location.href = '/login.html';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/my-orders', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                console.log(`Pętla #${pollCount}: Otrzymano odpowiedź z API. Status: ${response.status}`);
+                if (!response.ok) throw new Error(`Błąd serwera: ${response.statusText}`);
+
+                const orders = await response.json();
+                console.log(`Pętla #${pollCount}: Otrzymano ${orders.length} zamówień z API.`);
+                console.log(orders);
+
+                loadingDiv.style.display = 'none';
+                table.style.display = 'table';
+                
+                console.log(`Pętla #${pollCount}: Czyszczę tabelę (tableBody.innerHTML = '')...`);
+                tableBody.innerHTML = '';
+                console.log(`Pętla #${pollCount}: Tabela wyczyszczona.`);
+
+                if (orders.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Nie masz jeszcze żadnych zamówień.</td></tr>';
+                    if (pollingIntervalId) clearInterval(pollingIntervalId);
+                    return;
+                }
+
+                let isAnyOrderInQueue = false;
+
+                console.log(`Pętla #${pollCount}: Rozpoczynam pętlę forEach do renderowania wierszy...`);
+                orders.forEach((order, index) => {
+                    const row = document.createElement('tr');
+                    const formattedDate = new Date(order.created_at).toLocaleString('pl-PL');
+                    
+                    let statusHtml = `<span class="status-${order.status}">${order.status}</span>`;
+                    
+                    if (order.status === 'w kolejce' && order.people_in_front !== null && order.people_in_front !== undefined) {
+                        isAnyOrderInQueue = true;
+                        statusHtml += `<br><small>Osób przed Tobą: ${order.people_in_front}</small>`;
+                    }
+
+                    row.innerHTML = `
+                        <td>${order.id}</td>
+                        <td>${order.concert_name}</td>
+                        <td>${order.quantity}</td>
+                        <td>${statusHtml}</td>
+                        <td>${formattedDate}</td>
+                    `;
+                    tableBody.appendChild(row);
+                    console.log(`Pętla #${pollCount}: Dodano wiersz dla zamówienia ID ${order.id}`);
+                });
+                console.log(`Pętla #${pollCount}: Zakończono pętlę forEach.`);
+
+                if (!isAnyOrderInQueue && pollingIntervalId) {
+                    clearInterval(pollingIntervalId);
+                    console.log(`Pętla #${pollCount}: Zatrzymuję pętlę, bo nie ma już zamówień w kolejce.`);
+                }
+
+            } catch (error) {
+                console.error(`Pętla #${pollCount}: Wystąpił KRYTYCZNY BŁĄD. Zatrzymuję pętlę.`, error);
+                loadingDiv.textContent = `Błąd: ${error.message}`;
+                loadingDiv.style.color = 'red';
+                if (pollingIntervalId) clearInterval(pollingIntervalId);
+            }
+        }
+
+        if (!token) {
+            window.location.href = '/login.html';
+        } else {
+            fetchAndRenderOrders();
+            pollingIntervalId = setInterval(fetchAndRenderOrders, 500);
+        }
+    </script>
+</body>
+</html>
